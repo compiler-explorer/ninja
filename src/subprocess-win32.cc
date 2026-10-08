@@ -30,23 +30,16 @@ namespace {
 /// AppContainer processes may not create pipes in the global namespace, but
 /// are allowed to use the \\.\pipe\LOCAL\ namespace.
 bool IsRunningInAppContainer() {
-  static int cached = -1;
-  if (cached != -1)
-    return cached == 1;
-
-  cached = 0;
   HANDLE token = NULL;
   if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token))
     return false;
   DWORD is_app_container = 0;
   DWORD length = sizeof(is_app_container);
-  if (GetTokenInformation(token, TokenIsAppContainer, &is_app_container,
-                          length, &length) &&
-      is_app_container) {
-    cached = 1;
-  }
+  bool result = GetTokenInformation(token, TokenIsAppContainer,
+                                    &is_app_container, length, &length) &&
+                is_app_container;
   CloseHandle(token);
-  return cached == 1;
+  return result;
 }
 
 }  // namespace
@@ -68,8 +61,9 @@ Subprocess::~Subprocess() {
 
 HANDLE Subprocess::SetupPipe(HANDLE ioport) {
   // AppContainers may only create pipes in the LOCAL namespace.
+  static bool in_app_container = IsRunningInAppContainer();
   const char* pipe_prefix = "\\\\.\\pipe";
-  if (IsRunningInAppContainer())
+  if (in_app_container)
     pipe_prefix = "\\\\.\\pipe\\LOCAL";
 
   char pipe_name[100];
