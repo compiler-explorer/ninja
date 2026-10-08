@@ -67,11 +67,14 @@ Subprocess::~Subprocess() {
 }
 
 HANDLE Subprocess::SetupPipe(HANDLE ioport) {
+  // AppContainers may only create pipes in the LOCAL namespace.
+  const char* pipe_prefix = "\\\\.\\pipe";
+  if (IsRunningInAppContainer())
+    pipe_prefix = "\\\\.\\pipe\\LOCAL";
+
   char pipe_name[100];
-  snprintf(pipe_name, sizeof(pipe_name),
-           "\\\\.\\pipe\\%sninja_pid%lu_sp%p",
-           IsRunningInAppContainer() ? "LOCAL\\" : "", GetCurrentProcessId(),
-           this);
+  snprintf(pipe_name, sizeof(pipe_name), "%s\\ninja_pid%lu_sp%p", pipe_prefix,
+           GetCurrentProcessId(), this);
 
   pipe_ = ::CreateNamedPipeA(pipe_name,
                              PIPE_ACCESS_INBOUND | FILE_FLAG_OVERLAPPED,
