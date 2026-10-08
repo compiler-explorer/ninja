@@ -24,6 +24,33 @@
 
 using namespace std;
 
+namespace {
+
+/// Return true if the current process runs inside an AppContainer sandbox.
+/// AppContainer processes may not create pipes in the global namespace, but
+/// are allowed to use the \\.\pipe\LOCAL\ namespace.
+bool IsRunningInAppContainer() {
+  static int cached = -1;
+  if (cached != -1)
+    return cached == 1;
+
+  cached = 0;
+  HANDLE token = NULL;
+  if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token))
+    return false;
+  DWORD is_app_container = 0;
+  DWORD length = sizeof(is_app_container);
+  if (GetTokenInformation(token, TokenIsAppContainer, &is_app_container,
+                          length, &length) &&
+      is_app_container) {
+    cached = 1;
+  }
+  CloseHandle(token);
+  return cached == 1;
+}
+
+}  // namespace
+
 Subprocess::Subprocess(bool use_console) : child_(NULL) , overlapped_(),
                                            is_reading_(false),
                                            use_console_(use_console) {
@@ -42,7 +69,9 @@ Subprocess::~Subprocess() {
 HANDLE Subprocess::SetupPipe(HANDLE ioport) {
   char pipe_name[100];
   snprintf(pipe_name, sizeof(pipe_name),
-           "\\\\.\\pipe\\LOCAL\\ninja_pid%lu_sp%p", GetCurrentProcessId(), this);
+           "\\\\.\\pipe\\%sninja_pid%lu_sp%p",
+           IsRunningInAppContainer() ? "LOCAL\\" : "", GetCurrentProcessId(),
+           this);
 
   pipe_ = ::CreateNamedPipeA(pipe_name,
                              PIPE_ACCESS_INBOUND | FILE_FLAG_OVERLAPPED,
